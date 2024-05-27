@@ -1,3 +1,4 @@
+// node 18 cd node_modules/whatsapp-web.js/ npm install puppeteer@22.1.0
 const { Client, LocalAuth } = require('whatsapp-web.js');
 // const fs = require('fs');
 const express = require('express');
@@ -11,8 +12,11 @@ const app = express();
 const server = http.createServer(app);
 const io = socketIO(server);
 const client = new Client({
-  authStrategy: new LocalAuth(),
-//   restartOnAuthFail: true,
+  webVersionCache: {
+    type: "remote",
+    remotePath:
+      "https://raw.githubusercontent.com/gopin0011/wa-version/main/html/2.2412.54.html", // 2.2412.54.html
+  },
   puppeteer: {
     headless: true,
     args: [
@@ -26,7 +30,6 @@ const client = new Client({
       '--disable-gpu'
     ],
   },
-//   session: sessionCfg
 });
 
 let today = () => {
@@ -65,10 +68,20 @@ io.on('connection', (socket) => {
   socket.emit('message', `${today()} Connected`);
 
   client.on('qr', (qr) => {
-    qrcode.toDataURL(qr, (err, url) => {
-      socket.emit("qr", url);
-      socket.emit('message', `${today()} QR Code received`);
-    });
+    try {
+      qrcode.toDataURL(qr, (err, url) => {
+        if (err) {
+          // Handle the error
+          console.error("Error generating QR code:", err);
+          return;
+        }
+        socket.emit("qr", url);
+        socket.emit('message', `${today()} QR Code received`);
+      });
+    } catch (error) {
+      // Handle any synchronous errors that may occur within the try block
+      console.error("Error in QR event listener:", error);
+    }
   });
 
   client.on('ready', () => {
@@ -107,7 +120,18 @@ io.on('connection', (socket) => {
 });
 
 // send message routing
-app.post('/send', (req, res) => {
+app.post('/send', (req, res, next) => {
+  const accessSiteHeader = req.headers['access-site'];
+
+  if (!accessSiteHeader || accessSiteHeader !== 'KEY-3c348bf805867a44541d8dcbc6a2f1e7') {
+    return res.status(403).json({
+      error: true,
+      message: 'Forbidden. Missing or invalid access-site header.'
+    });
+  }
+
+  next();
+}, (req, res) => {
   const phone = req.body.phone;
   const message = req.body.message;
 
